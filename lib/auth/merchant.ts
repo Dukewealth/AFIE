@@ -1,5 +1,9 @@
 import { createServerSupabaseClient } from "@/lib/db/supabase";
 import type { Merchant } from "@/lib/db/database.types";
+import {
+  getDevMerchantApiKey,
+  isSupabaseConfigured,
+} from "@/lib/dashboard/config";
 
 export class MerchantAuthError extends Error {
   constructor(
@@ -28,6 +32,21 @@ export function extractBearerToken(authHeader: string | null): string {
   return token.trim();
 }
 
+function getDevMerchant(apiKey: string): Merchant | null {
+  const devApiKey = getDevMerchantApiKey();
+  if (!devApiKey || apiKey !== devApiKey) {
+    return null;
+  }
+
+  return {
+    id: "00000000-0000-0000-0000-000000000001",
+    name: "Development Merchant",
+    api_key: devApiKey,
+    webhook_url: null,
+    created_at: new Date().toISOString(),
+  };
+}
+
 /**
  * Validates merchant API key against Supabase merchants table.
  * Falls back to MERCHANT_API_KEY env var for local development.
@@ -35,35 +54,51 @@ export function extractBearerToken(authHeader: string | null): string {
 export async function validateMerchantApiKey(
   apiKey: string,
 ): Promise<Merchant> {
-  const supabase = createServerSupabaseClient();
+  const devMerchant = getDevMerchant(apiKey);
 
-  const { data: merchant, error } = await supabase
-    .from("merchants")
-    .select("*")
-    .eq("api_key", apiKey)
-    .maybeSingle();
-
-  if (error) {
-    throw new MerchantAuthError(
-      "Failed to validate API key",
-      403,
-    );
+  if (!isSupabaseConfigured()) {
+    if (devMerchant) {
+      return devMerchant;
+    }
+    throw new MerchantAuthError("Invalid API key");
   }
 
-  if (merchant) {
-    return merchant;
-  }
+  try {
+    const supabase = createServerSupabaseClient();
 
-  const devApiKey = process.env.MERCHANT_API_KEY;
-  if (devApiKey && apiKey === devApiKey) {
-    return {
-      id: "00000000-0000-0000-0000-000000000001",
-      name: "Development Merchant",
-      api_key: devApiKey,
-      webhook_url: null,
-      created_at: new Date().toISOString(),
-    };
-  }
+    const { data: merchant, error } = await supabase
+      .from("merchants")
+      .select("*")
+      .eq("api_key", apiKey)
+      .maybeSingle();
 
-  throw new MerchantAuthError("Invalid API key");
+    if (error) {
+      console.warn("[AFIE] Supabase merchant lookup failed:", error.message);
+      if (devMerchant) {
+        return devMerchant;
+      }
+      throw new MerchantAuthError("Failed to validate API key", 403);
+    }
+
+    if (merchant) {
+      return merchant;
+    }
+
+    if (devMerchant) {
+      return devMerchant;
+    }
+
+    throw new MerchantAuthError("Invalid API key");
+  } catch (error) {
+    if (devMerchant) {
+      console.warn("[AFIE] Using development merchant after auth lookup failure.");
+      return devMerchant;
+    }
+
+    if (error instanceof MerchantAuthError) {
+      throw error;
+    }
+
+    throw new MerchantAuthError("Failed to validate API key", 403);
+  }
 }

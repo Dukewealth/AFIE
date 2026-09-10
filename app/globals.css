@@ -24,3 +24,66 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.dashboard-root {
+  --dash-ink: #0b0e14;
+  --dash-panel: #12171f;
+  --dash-line: #243044;
+  --dash-signal: #3ecfcf;
+  --dash-paper: #e6eaf2;
+  --dash-mist: #8b95a8;
+  background:
+    radial-gradient(1200px 500px at 8% -10%, rgba(62, 207, 207, 0.08), transparent 50%),
+    linear-gradient(180deg, #10151d 0%, var(--dash-ink) 28%);
+  color: var(--dash-paper);
+  font-family: var(--font-dashboard-sans), var(--font-geist-sans), sans-serif;
+}
+
+.dashboard-kicker {
+  font-family: var(--font-dashboard-mono), var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dash-mist);
+}
+
+.dashboard-panel {
+  border: 1px solid var(--dash-line);
+  background: color-mix(in srgb, var(--dash-panel) 92%, transparent);
+  border-radius: 2px;
+}
+
+.dashboard-inset {
+  border: 1px solid var(--dash-line);
+  background: color-mix(in srgb, var(--dash-ink) 80%, transparent);
+  border-radius: 2px;
+  padding: 0.75rem 0.85rem;
+}
+
+.dashboard-root .font-mono {
+  font-family: var(--font-dashboard-mono), var(--font-geist-mono), ui-monospace, monospace;
+}
+
+.threat-fill {
+  background: linear-gradient(90deg, #5fbf8a 0%, #e8a54b 58%, #e85d5d 100%);
+  opacity: 0.85;
+}
+
+.row-arrive {
+  animation: tape-arrive 420ms ease-out;
+}
+
+@keyframes tape-arrive {
+  from {
+    background-color: color-mix(in srgb, var(--dash-signal) 16%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-arrive {
+    animation: none;
+  }
+}

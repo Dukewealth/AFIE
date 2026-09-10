@@ -1,6 +1,8 @@
 import { Redis } from "@upstash/redis";
+import { isRedisConfigured } from "@/lib/dashboard/config";
+import { MemoryRedis, seedLocalBlacklist } from "@/lib/redis/memory";
 
-export type TypedRedisClient = Redis;
+export type TypedRedisClient = Redis | MemoryRedis;
 
 function getRedisUrl(): string {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -25,24 +27,38 @@ function getRedisToken(): string {
 let redisClient: TypedRedisClient | null = null;
 
 /**
- * Singleton Upstash Redis REST client for velocity checks and blacklist lookups.
+ * Redis client for velocity checks and blacklist lookups.
+ * Falls back to an in-memory store when Upstash is not configured.
  */
 export function createRedisClient(): TypedRedisClient {
-  if (!redisClient) {
-    redisClient = new Redis({
-      url: getRedisUrl(),
-      token: getRedisToken(),
-    });
+  if (redisClient) {
+    return redisClient;
   }
+
+  if (!isRedisConfigured()) {
+    console.warn("[AFIE] Upstash not configured — using in-memory Redis for local dev.");
+    const memory = new MemoryRedis();
+    seedLocalBlacklist(memory);
+    redisClient = memory;
+    return redisClient;
+  }
+
+  redisClient = new Redis({
+    url: getRedisUrl(),
+    token: getRedisToken(),
+  });
+
   return redisClient;
 }
 
 /** Redis key prefixes used by the fraud engine. */
 export const RedisKeys = {
-  velocity: (userId: string, window: "5m" | "1h" | "24h") =>
-    `velocity:${userId}:${window}`,
-  blacklistIp: (ip: string) => `blacklist:ip:${ip}`,
-  blacklistDevice: (fingerprint: string) => `blacklist:device:${fingerprint}`,
+  velocityUser: (userId: string, window: "3m" | "1h") =>
+    `velocity:user:${userId}:${window}`,
+  velocityDevice: (fingerprint: string, window: "3m" | "1h") =>
+    `velocity:device:${fingerprint}:${window}`,
+  blacklistIdentifiers: "blacklist:identifiers",
+  userStats: (userId: string) => `user:stats:${userId}`,
   whitelistIp: (ip: string) => `whitelist:ip:${ip}`,
   whitelistDevice: (fingerprint: string) => `whitelist:device:${fingerprint}`,
 } as const;

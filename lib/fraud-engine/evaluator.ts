@@ -1,50 +1,46 @@
 import type { Json } from "@/lib/db/database.types";
+import { isSupabaseConfigured } from "@/lib/dashboard/config";
 import { createServerSupabaseClient } from "@/lib/db/supabase";
-import { createRedisClient, RedisKeys } from "@/lib/redis/upstash";
+import {
+  evaluateForensicAgent,
+  type AgentEvaluationOutcome,
+} from "@/lib/fraud-engine/agent";
+import {
+  evaluateHeuristics,
+  type HeuristicEvaluationResult,
+} from "@/lib/fraud-engine/heuristics";
 import {
   actionToStatus,
-  riskScoreToAction,
   type EvaluationResult,
   type TransactionPayload,
 } from "@/lib/fraud-engine/types";
+import { recordLocalEvaluation } from "@/lib/store/local";
 
 export interface EvaluateOptions {
   merchantId: string;
 }
 
-interface HeuristicSignal {
-  score: number;
-  reason: string;
-}
-
-/**
- * Deterministic fast-path fraud evaluator.
- * Performs Redis lookups and heuristic scoring before AI escalation (future step).
- */
 export async function evaluateTransaction(
   payload: TransactionPayload,
   options: EvaluateOptions,
 ): Promise<EvaluationResult> {
   const start = performance.now();
-  const redis = createRedisClient();
-  const reasons: string[] = [];
-  let riskScore = 0;
+  const heuristicResult = await evaluateHeuristics(payload);
 
-  const signals = await Promise.all([
-    checkBlacklist(redis, payload),
-    checkVelocity(redis, payload),
-    checkMetadataHeuristics(payload),
-    checkAmountHeuristics(payload),
-  ]);
+  let agentOutcome: AgentEvaluationOutcome | null = null;
+  let action = heuristicResult.action;
+  let riskScore = heuristicResult.score;
+  let reasons = [...heuristicResult.reasons];
 
-  for (const signalList of signals) {
-    for (const signal of signalList) {
-      riskScore = Math.min(100, riskScore + signal.score);
-      reasons.push(signal.reason);
+  if (heuristicResult.status === "FLAGGED") {
+    agentOutcome = await evaluateForensicAgent(payload, heuristicResult);
+    if (agentOutcome.source === "AI_AGENT") {
+      action = agentOutcome.action;
+      riskScore = agentOutcome.risk_score;
+      reasons = [agentOutcome.reason, ...heuristicResult.reasons];
     }
   }
 
-  const action = riskScoreToAction(riskScore);
   const latencyMs = Math.round(performance.now() - start);
   const timestamp = new Date().toISOString();
 
@@ -56,107 +52,31 @@ export async function evaluateTransaction(
     timestamp,
   };
 
-  await persistEvaluation(payload, options.merchantId, result).catch((err) => {
+  await persistEvaluation(
+    payload,
+    options.merchantId,
+    result,
+    heuristicResult,
+    agentOutcome,
+  ).catch((err) => {
     console.error("[AFIE] Failed to persist evaluation:", err);
   });
 
   return result;
 }
 
-async function checkBlacklist(
-  redis: ReturnType<typeof createRedisClient>,
-  payload: TransactionPayload,
-): Promise<HeuristicSignal[]> {
-  const signals: HeuristicSignal[] = [];
-
-  const [ipBlocked, deviceBlocked] = await Promise.all([
-    redis.get<boolean>(RedisKeys.blacklistIp(payload.ip_address)),
-    redis.get<boolean>(RedisKeys.blacklistDevice(payload.device_fingerprint)),
-  ]);
-
-  if (ipBlocked) {
-    signals.push({ score: 80, reason: `Blacklisted IP: ${payload.ip_address}` });
-  }
-
-  if (deviceBlocked) {
-    signals.push({
-      score: 75,
-      reason: `Blacklisted device fingerprint: ${payload.device_fingerprint}`,
-    });
-  }
-
-  return signals;
-}
-
-async function checkVelocity(
-  redis: ReturnType<typeof createRedisClient>,
-  payload: TransactionPayload,
-): Promise<HeuristicSignal[]> {
-  const signals: HeuristicSignal[] = [];
-  const key = RedisKeys.velocity(payload.user_id, "5m");
-
-  const count = await redis.incr(key);
-  if (count === 1) {
-    await redis.expire(key, 300);
-  }
-
-  if (count >= 4) {
-    signals.push({
-      score: 45,
-      reason: `High velocity: ${count} attempts in past 5 minutes`,
-    });
-  } else if (count >= 2) {
-    signals.push({
-      score: 20,
-      reason: `Elevated velocity: ${count} attempts in past 5 minutes`,
-    });
-  }
-
-  return signals;
-}
-
-function checkMetadataHeuristics(
-  payload: TransactionPayload,
-): HeuristicSignal[] {
-  const signals: HeuristicSignal[] = [];
-  const accountAgeDays = payload.metadata.account_age_days;
-
-  if (typeof accountAgeDays === "number" && accountAgeDays < 7) {
-    signals.push({
-      score: 25,
-      reason: "New account (< 7 days) with transaction activity",
-    });
-  }
-
-  const previousTx = payload.metadata.previous_successful_tx;
-  if (typeof previousTx === "number" && previousTx === 0 && payload.amount > 100) {
-    signals.push({
-      score: 30,
-      reason: "First transaction with high transaction value",
-    });
-  }
-
-  return signals;
-}
-
-function checkAmountHeuristics(payload: TransactionPayload): HeuristicSignal[] {
-  const signals: HeuristicSignal[] = [];
-
-  if (payload.amount >= 10_000) {
-    signals.push({
-      score: 35,
-      reason: `High transaction amount: ${payload.amount} ${payload.currency}`,
-    });
-  }
-
-  return signals;
-}
-
 async function persistEvaluation(
   payload: TransactionPayload,
   merchantId: string,
   result: EvaluationResult,
+  heuristicResult: HeuristicEvaluationResult,
+  agentOutcome: AgentEvaluationOutcome | null,
 ): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    recordLocalEvaluation(payload, merchantId, result, heuristicResult, agentOutcome);
+    return;
+  }
+
   const supabase = createServerSupabaseClient();
 
   const { data: transaction, error: txError } = await supabase
@@ -179,20 +99,63 @@ async function persistEvaluation(
     .select("id")
     .single();
 
-  if (txError) {
-    throw txError;
-  }
+  if (txError) throw txError;
 
-  const auditDetails: Json = {
-    action: result.action,
-    risk_score: result.risk_score,
-    reasons: result.reasons,
+  const heuristicAudit: Json = {
+    action: heuristicResult.action,
+    risk_score: heuristicResult.score,
+    reasons: heuristicResult.reasons,
+    heuristic_status: heuristicResult.status,
+    triggered_rules: heuristicResult.triggeredRules,
+    velocity_stats: {
+      userCount3m: heuristicResult.velocityStats.userCount3m,
+      userCount1h: heuristicResult.velocityStats.userCount1h,
+      deviceCount3m: heuristicResult.velocityStats.deviceCount3m,
+      deviceCount1h: heuristicResult.velocityStats.deviceCount1h,
+    },
+    requires_ai_agent: heuristicResult.status === "FLAGGED",
     metadata: JSON.parse(JSON.stringify(payload.metadata)) as Json,
   };
 
   await supabase.from("audit_logs").insert({
     transaction_id: transaction.id,
     stage: "HEURISTIC",
-    details: auditDetails,
+    details: heuristicAudit,
+  });
+
+  if (agentOutcome) {
+    const agentAudit: Json = {
+      source: agentOutcome.source,
+      action: agentOutcome.action,
+      risk_score: agentOutcome.risk_score,
+      reason: agentOutcome.reason,
+      agent_latency_ms: agentOutcome.agent_latency_ms ?? null,
+      fallback_reason: agentOutcome.fallback_reason ?? null,
+      final_action: result.action,
+      final_risk_score: result.risk_score,
+    };
+
+    await supabase.from("audit_logs").insert({
+      transaction_id: transaction.id,
+      stage: "AI_AGENT",
+      details: agentAudit,
+    });
+  }
+
+  await supabase.from("audit_logs").insert({
+    transaction_id: transaction.id,
+    stage: "FINAL_DISPATCH",
+    details: {
+      action: result.action,
+      risk_score: result.risk_score,
+      reasons: result.reasons,
+      latency_ms: result.latency_ms,
+      evaluation_path:
+        agentOutcome?.source === "AI_AGENT"
+          ? "HEURISTIC_THEN_AI"
+          : agentOutcome?.source === "HEURISTIC_FALLBACK"
+            ? "HEURISTIC_THEN_FALLBACK"
+            : "HEURISTIC_ONLY",
+    } satisfies Json,
   });
 }

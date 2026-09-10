@@ -205,3 +205,4 @@ export interface Database {
 
 export type Merchant = Database["public"]["Tables"]["merchants"]["Row"];
 export type Transaction = Database["public"]["Tables"]["transactions"]["Row"];
+export type AuditLog = Database["public"]["Tables"]["audit_logs"]["Row"];
