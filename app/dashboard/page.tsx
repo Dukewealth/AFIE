@@ -11,7 +11,7 @@ export default async function DashboardPage() {
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 
   return (
-    <main className="min-h-screen bg-[#0B0F19] text-slate-100">
+    <main className="min-h-screen bg-[#090D16] text-slate-100">
       <DashboardClient
         initialTransactions={snapshot.transactions}
         initialKpis={snapshot.kpis}

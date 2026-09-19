@@ -131,7 +131,7 @@ export function BinaryCodeStream() {
     );
     io.observe(wrap);
 
-    let pageVisible = document.visibilityState === "visible";
+    pageVisible = document.visibilityState === "visible";
     const onVisibility = () => {
       pageVisible = document.visibilityState === "visible";
     };

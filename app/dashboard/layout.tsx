@@ -14,9 +14,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AFIE RiskOps Studio",
+  title: "Incident Command · AFIE Fraud Operations",
   description:
-    "Enterprise fraud risk operations console — telemetry, event stream, and case investigation.",
+    "Mission-critical fraud operations console — live stream, incident deep-dive, and rule tuning.",
 };
 
 export default function DashboardLayout({

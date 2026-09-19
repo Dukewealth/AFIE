@@ -54,13 +54,13 @@ body {
 }
 
 .dashboard-root {
-  --dash-ink: #0b0f19;
+  --dash-ink: #090d16;
   --dash-panel: #0f172a;
   --dash-line: #1e293b;
   --dash-signal: #34d399;
   --dash-paper: #f1f5f9;
   --dash-mist: #64748b;
-  background: #0b0f19;
+  background: #090d16;
   color: var(--dash-paper);
   font-family: var(--font-dashboard-sans), var(--font-geist-sans), system-ui, sans-serif;
 }

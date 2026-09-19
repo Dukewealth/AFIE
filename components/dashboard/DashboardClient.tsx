@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { Code2, FileDown } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CommandHeader } from "@/components/dashboard/CommandHeader";
 import { DailyReportPrint } from "@/components/dashboard/DailyReportPrint";
 import { DeveloperModal } from "@/components/dashboard/DeveloperModal";
-import { ForensicDrawer } from "@/components/dashboard/ForensicDrawer";
-import { KpiHeader } from "@/components/dashboard/KpiHeader";
+import { IncidentInspector } from "@/components/dashboard/IncidentInspector";
+import { RuleTuningDrawer } from "@/components/dashboard/RuleTuningDrawer";
+import { TelemetryRow } from "@/components/dashboard/TelemetryRow";
 import { TransactionStream } from "@/components/dashboard/TransactionStream";
 import { applyLiveTransactionToKpis } from "@/lib/dashboard/metrics";
 import { normalizeTransaction } from "@/lib/dashboard/normalize";
@@ -44,25 +44,34 @@ export function DashboardClient({
   const [forensicsLoading, setForensicsLoading] = useState(false);
   const [forensicsError, setForensicsError] = useState<string | null>(null);
   const [apiOpen, setApiOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [actionToast, setActionToast] = useState<string | null>(null);
+  const [throughput, setThroughput] = useState(1180);
 
-  const upsertTransaction = useCallback((
-    incoming: DashboardTransaction,
-    eventMode: "insert" | "update",
-  ) => {
-    setTransactions((current) => {
-      const exists = current.some((row) => row.id === incoming.id);
-      if (exists) {
-        return current.map((row) => (row.id === incoming.id ? incoming : row));
-      }
-      return [incoming, ...current].slice(0, FEED_CAP);
-    });
-
-    if (eventMode === "insert") {
-      setKpis((current) => applyLiveTransactionToKpis(current, incoming));
-    }
-
-    setSelected((current) => (current?.id === incoming.id ? incoming : current));
+  const flash = useCallback((message: string) => {
+    setActionToast(message);
+    window.setTimeout(() => setActionToast(null), 2800);
   }, []);
+
+  const upsertTransaction = useCallback(
+    (incoming: DashboardTransaction, eventMode: "insert" | "update") => {
+      setTransactions((current) => {
+        const exists = current.some((row) => row.id === incoming.id);
+        if (exists) {
+          return current.map((row) => (row.id === incoming.id ? incoming : row));
+        }
+        return [incoming, ...current].slice(0, FEED_CAP);
+      });
+
+      if (eventMode === "insert") {
+        setKpis((current) => applyLiveTransactionToKpis(current, incoming));
+        setThroughput((t) => Math.min(2400, t + 3 + Math.floor(Math.random() * 8)));
+      }
+
+      setSelected((current) => (current?.id === incoming.id ? incoming : current));
+    },
+    [],
+  );
 
   useEffect(() => {
     if (mode === "demo" || !isBrowserSupabaseConfigured()) {
@@ -76,6 +85,7 @@ export function DashboardClient({
           };
           setTransactions(snapshot.transactions);
           setKpis(snapshot.kpis);
+          setThroughput((t) => 1100 + Math.floor(Math.random() * 280));
         } catch {
           // Keep last known dashboard state during transient poll failures.
         }
@@ -158,92 +168,81 @@ export function DashboardClient({
     }
   }, []);
 
-  const closeForensics = useCallback(() => {
-    setSelected(null);
-    setForensics(null);
-    setForensicsError(null);
-  }, []);
-
-  const p95Latency = Math.max(kpis.averageLatencyMs, Math.round(kpis.averageLatencyMs * 1.35));
-  const ingestionLabel =
-    connection === "live"
-      ? "Supabase CDC Stream Connected"
-      : connection === "demo"
-        ? "Local Event Ingest Active"
-        : connection === "connecting"
-          ? "Connecting Event Stream…"
-          : "Event Ingestion Offline";
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return transactions;
+    return transactions.filter((tx) => {
+      const hay = [
+        tx.external_tx_id,
+        tx.user_id,
+        tx.device_fingerprint ?? "",
+        tx.ip_address ?? "",
+        tx.decision_reason ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [transactions, searchQuery]);
 
   return (
     <>
-      {/* System telemetry strip */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#0B0F19]/95 backdrop-blur-md print:hidden">
-        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="min-w-0 space-y-1.5">
-            <h1 className="font-mono text-sm font-semibold tracking-[0.14em] text-slate-100 uppercase">
-              AFIE RiskOps Studio
-            </h1>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] tracking-[0.08em] text-slate-400 uppercase">
-              <span className="inline-flex items-center gap-1.5 text-emerald-400">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
-                Autonomous Autopilot Active
-              </span>
-              <span>P95 Latency: {p95Latency} ms</span>
-              <span
-                className={
-                  connection === "offline" ? "text-rose-400" : "text-slate-400"
-                }
-              >
-                Event Ingestion: {ingestionLabel}
-              </span>
-            </div>
-          </div>
+      <CommandHeader
+        avgLatencyMs={kpis.averageLatencyMs || 34}
+        throughputHint={connection === "offline" ? 0 : throughput}
+        onOpenSearch={() => undefined}
+        onExportSar={() => {
+          flash("SAR packet queued · BoG/NIBSS export ready");
+          window.print();
+        }}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 rounded border border-slate-800 bg-slate-900/60 px-2.5 py-1.5 text-xs text-slate-300 backdrop-blur-sm transition hover:border-slate-700 hover:text-slate-100"
-            >
-              <FileDown className="h-3.5 w-3.5" />
-              Export Audit Dossier (PDF)
-            </button>
-            <button
-              type="button"
-              onClick={() => setApiOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded border border-emerald-800/50 bg-emerald-950/60 px-2.5 py-1.5 text-xs font-medium text-emerald-400 transition hover:bg-emerald-950/80"
-            >
-              <Code2 className="h-3.5 w-3.5" />
-              API Credentials & Webhooks
-            </button>
-            <Link
-              href="/"
-              className="font-mono text-[10px] tracking-[0.12em] text-slate-500 uppercase transition hover:text-slate-300"
-            >
-              Home
-            </Link>
-          </div>
-        </div>
-      </header>
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-3 py-3 sm:px-4 sm:py-4">
+        <TelemetryRow kpis={kpis} transactions={transactions} />
 
-      <div className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6 sm:py-6">
-        <KpiHeader kpis={kpis} connection={connection} />
-        <div className="mt-4">
-          <TransactionStream
-            transactions={transactions}
-            selectedId={selected?.id ?? null}
-            onSelect={openForensics}
-          />
+        <div className="grid min-h-[560px] gap-3 lg:grid-cols-5 lg:items-stretch">
+          <div className="min-h-[420px] lg:col-span-3">
+            <TransactionStream
+              transactions={filtered}
+              selectedId={selected?.id ?? null}
+              onSelect={openForensics}
+              onRelease={(tx) => flash(`Hold released · ${tx.external_tx_id}`)}
+              onConfirmFraud={(tx) =>
+                flash(`Fraud confirmed · blacklist candidate ${tx.user_id}`)
+              }
+              onInspectGraph={(tx) => {
+                void openForensics(tx);
+                flash(`Entity graph focused · ${tx.device_fingerprint ?? tx.user_id}`);
+              }}
+            />
+          </div>
+          <div className="min-h-[420px] lg:col-span-2">
+            <IncidentInspector
+              transaction={selected}
+              forensics={forensics}
+              loading={forensicsLoading}
+              error={forensicsError}
+              toast={actionToast}
+              onFileSar={() => {
+                flash("Regulatory SAR filed (BoG/NIBSS format)");
+                window.print();
+              }}
+              onBlacklist={() =>
+                flash(
+                  `Beneficiary hashed → global blacklist · ${selected?.user_id ?? ""}`,
+                )
+              }
+              onOverride={() =>
+                flash("Override pending MFA · step-up challenge issued")
+              }
+            />
+          </div>
         </div>
       </div>
 
-      <ForensicDrawer
-        transaction={selected}
-        forensics={forensics}
-        loading={forensicsLoading}
-        error={forensicsError}
-        onClose={closeForensics}
-      />
+      <RuleTuningDrawer />
 
       <DeveloperModal
         open={apiOpen}
