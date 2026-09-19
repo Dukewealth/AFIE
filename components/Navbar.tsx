@@ -9,6 +9,7 @@ const CENTER_LINKS = [
   { href: "/network", label: "Network" },
   { href: "/engine", label: "Engine" },
   { href: "/integrations", label: "Integrations" },
+  { href: "/lab", label: "Lab" },
   { href: "/docs", label: "Docs" },
   { href: "/compliance", label: "Compliance" },
   { href: "/pricing", label: "Pricing" },
