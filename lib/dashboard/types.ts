@@ -15,6 +15,7 @@ export interface DashboardKpis {
   blockRate: number;
   averageLatencyMs: number;
   threatLevel: ThreatLevel;
+  fraudVolumePrevented: number;
 }
 
 export interface DashboardSnapshot {
@@ -35,4 +36,6 @@ export interface DashboardClientProps {
   initialTransactions: DashboardTransaction[];
   initialKpis: DashboardKpis;
   mode: "live" | "demo";
+  apiKey: string;
+  apiBaseUrl: string;
 }

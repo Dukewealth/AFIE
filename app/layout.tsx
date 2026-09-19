@@ -13,9 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AFIE Engine | Autonomous Fraud Intelligence",
+  title: {
+    default: "AFIE | Autonomous Fraud Intelligent Engine",
+    template: "%s · AFIE",
+  },
   description:
-    "Autonomous fraud evaluation engine with heuristics, AI forensic escalation, and live risk operations dashboard.",
+    "Inline pre-authorization risk inference for African MFIs — sub-40ms deterministic halting before settlement.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -24,7 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col font-sans antialiased">{children}</body>
     </html>
   );
 }

@@ -4,7 +4,9 @@ import {
   validateMerchantApiKey,
 } from "@/lib/auth/merchant";
 import { handleRouteError, jsonError } from "@/lib/api/errors";
+import { isSupabaseConfigured } from "@/lib/dashboard/config";
 import { createServerSupabaseClient } from "@/lib/db/supabase";
+import { getLocalTransactions } from "@/lib/store/local";
 
 export const runtime = "nodejs";
 
@@ -25,6 +27,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const limit = Math.min(parsedLimit, MAX_LIMIT);
+
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json(getLocalTransactions(limit), { status: 200 });
+    }
+
     const supabase = createServerSupabaseClient();
 
     const { data: transactions, error } = await supabase

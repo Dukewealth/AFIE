@@ -1,8 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --afie-canvas: #06080d;
+  --afie-card: #0b0f17;
+  --afie-elevated: #111827;
+  --afie-focus: #161f30;
+  --afie-border: rgba(255, 255, 255, 0.06);
+  --afie-border-hi: rgba(255, 255, 255, 0.12);
+  --afie-halt: #ef4444;
+  --afie-challenge: #f59e0b;
+  --afie-clear: #10b981;
+  --afie-cobalt: #2563eb;
+  --afie-ink: #e8edf5;
+  --afie-mute: #8b95a8;
+  --background: #06080d;
+  --foreground: #e8edf5;
 }
 
 @theme inline {
@@ -12,31 +24,45 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--afie-canvas);
+  color: var(--afie-ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.afie-grid {
+  background-color: var(--afie-canvas);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.afie-card {
+  background: var(--afie-card);
+  border: 1px solid var(--afie-border);
+}
+
+.afie-card-elevated {
+  background: var(--afie-elevated);
+  border: 1px solid var(--afie-border-hi);
+}
+
+.tabular-telemetry {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 .dashboard-root {
-  --dash-ink: #0b0e14;
-  --dash-panel: #12171f;
-  --dash-line: #243044;
-  --dash-signal: #3ecfcf;
-  --dash-paper: #e6eaf2;
-  --dash-mist: #8b95a8;
-  background:
-    radial-gradient(1200px 500px at 8% -10%, rgba(62, 207, 207, 0.08), transparent 50%),
-    linear-gradient(180deg, #10151d 0%, var(--dash-ink) 28%);
+  --dash-ink: #0b0f19;
+  --dash-panel: #0f172a;
+  --dash-line: #1e293b;
+  --dash-signal: #34d399;
+  --dash-paper: #f1f5f9;
+  --dash-mist: #64748b;
+  background: #0b0f19;
   color: var(--dash-paper);
-  font-family: var(--font-dashboard-sans), var(--font-geist-sans), sans-serif;
+  font-family: var(--font-dashboard-sans), var(--font-geist-sans), system-ui, sans-serif;
 }
 
 .dashboard-kicker {
@@ -73,6 +99,21 @@ body {
   animation: tape-arrive 420ms ease-out;
 }
 
+.escudo-drawer {
+  animation: escudo-drawer-in 280ms ease-out;
+}
+
+@keyframes escudo-drawer-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 @keyframes tape-arrive {
   from {
     background-color: color-mix(in srgb, var(--dash-signal) 16%, transparent);
@@ -83,7 +124,33 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .row-arrive {
+  .row-arrive,
+  .escudo-drawer {
     animation: none;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  #afie-daily-report,
+  #afie-daily-report *,
+  #afie-sar-report,
+  #afie-sar-report * {
+    visibility: visible !important;
+  }
+
+  #afie-daily-report,
+  #afie-sar-report {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 24px;
+    background: white !important;
+    color: #18181b !important;
   }
 }

@@ -134,6 +134,13 @@ export function getLocalForensics(transactionId: string) {
   return assembleForensics(entry.transaction, entry.auditLogs);
 }
 
+export function getLocalTransactions(limit: number): DashboardTransaction[] {
+  return [...store.values()]
+    .map((entry) => entry.transaction)
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .slice(0, Math.max(limit, 0));
+}
+
 export function hasLocalEvaluations(): boolean {
   return store.size > 0;
 }

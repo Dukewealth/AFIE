@@ -1,88 +1,94 @@
 "use client";
 
-import { Activity, Gauge, ShieldOff, Siren } from "lucide-react";
-import { formatPercent } from "@/lib/dashboard/format";
 import type { DashboardKpis, LiveConnectionState, ThreatLevel } from "@/lib/dashboard/types";
+import { formatPercent } from "@/lib/dashboard/format";
 
-const THREAT_COPY: Record<ThreatLevel, string> = {
-  Low: "Nominal pressure across the last 24 hours",
-  Elevated: "Challenge volume or blocks are climbing",
-  High: "Autonomous blocks are running hot",
+/** Escudo severity labels mapped from internal threat levels. */
+const SEVERITY_LABEL: Record<ThreatLevel, "Guarded" | "Elevated" | "Critical"> = {
+  Low: "Guarded",
+  Elevated: "Elevated",
+  High: "Critical",
 };
 
-const THREAT_TONE: Record<ThreatLevel, string> = {
-  Low: "text-emerald-300",
-  Elevated: "text-amber-200",
-  High: "text-rose-300",
+const SEVERITY_TONE: Record<ThreatLevel, string> = {
+  Low: "text-emerald-400",
+  Elevated: "text-amber-400",
+  High: "text-rose-400",
+};
+
+const SEVERITY_COPY: Record<ThreatLevel, string> = {
+  Low: "Nominal pressure across the evaluation window",
+  Elevated: "Challenge and block volume rising",
+  High: "Autonomous blocks dominating the tape",
 };
 
 export function KpiHeader({
   kpis,
   connection,
-  mode,
 }: {
   kpis: DashboardKpis;
   connection: LiveConnectionState;
-  mode: "live" | "demo";
 }) {
   const fill =
-    kpis.threatLevel === "High" ? 86 : kpis.threatLevel === "Elevated" ? 52 : 18;
+    kpis.threatLevel === "High" ? 88 : kpis.threatLevel === "Elevated" ? 54 : 22;
 
   return (
-    <section className="space-y-4">
-      {mode === "demo" ? (
-        <div className="rounded-sm border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-          Local mode — dashboard auto-refreshes every 2s. Run{" "}
-          <code className="font-mono text-xs">npm run simulate</code> to feed live
-          evaluations. Add Supabase keys for production persistence.
-        </div>
-      ) : null}
-
-      <div className="dashboard-panel overflow-hidden">
-        <div className="flex items-center justify-between gap-4 border-b border-[var(--dash-line)] px-4 py-3 sm:px-5">
+    <section className="space-y-4 print:hidden">
+      {/* Risk Horizon */}
+      <div className="overflow-hidden rounded-md border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 px-4 py-2.5">
           <div>
-            <p className="dashboard-kicker">Threat horizon · 24h pressure</p>
-            <p className={`mt-1 font-medium ${THREAT_TONE[kpis.threatLevel]}`}>
-              {kpis.threatLevel} · {THREAT_COPY[kpis.threatLevel]}
+            <p className="font-mono text-[10px] tracking-[0.14em] text-slate-500 uppercase">
+              Risk horizon · 24h pressure
+            </p>
+            <p className={`mt-0.5 text-sm font-medium ${SEVERITY_TONE[kpis.threatLevel]}`}>
+              {SEVERITY_LABEL[kpis.threatLevel]} · {SEVERITY_COPY[kpis.threatLevel]}
             </p>
           </div>
-          <ConnectionChip state={connection} />
+          <IngestChip state={connection} />
         </div>
-        <div className="relative h-10 bg-[var(--dash-ink)]">
-          <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[var(--dash-line)]" />
+        <div className="relative h-10 bg-[#0B0F19]">
           <div
-            className="threat-fill absolute inset-y-2 left-2 rounded-sm"
-            style={{ width: `calc(${fill}% - 1rem)` }}
+            className="absolute inset-x-3 top-1/2 h-2 -translate-y-1/2 rounded-sm opacity-90"
+            style={{
+              background:
+                "linear-gradient(90deg, #059669 0%, #d97706 52%, #e11d48 100%)",
+            }}
           />
+          <div
+            className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 bg-white shadow-[0_0_10px_rgba(255,255,255,0.55)] transition-[left] duration-500"
+            style={{ left: `calc(${fill}% - 0.5rem)` }}
+            aria-hidden
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[9px] tracking-[0.16em] text-slate-600 uppercase">
+            Guarded → Critical
+          </span>
         </div>
       </div>
 
+      {/* Metric quadrants */}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard
-          icon={Activity}
-          label="Total evaluated"
+        <MetricCard
+          label="Total scanned (24h)"
           value={kpis.totalEvaluated24h.toLocaleString()}
-          hint="Last 24 hours"
+          subtitle="Evaluations ingested"
         />
-        <KpiCard
-          icon={ShieldOff}
+        <MetricCard
           label="Autonomous block rate"
           value={formatPercent(kpis.blockRate)}
-          hint={`${kpis.blockedCount24h.toLocaleString()} blocked`}
+          subtitle={`${kpis.blockedCount24h.toLocaleString()} blocked`}
           tone={kpis.blockRate >= 12 ? "hot" : kpis.blockRate >= 5 ? "warn" : "ok"}
         />
-        <KpiCard
-          icon={Gauge}
-          label="Avg processing latency"
+        <MetricCard
+          label="Mean processing latency"
           value={`${kpis.averageLatencyMs}`}
           suffix="ms"
-          hint="Heuristic + forensic path"
+          subtitle="Heuristic + forensic path"
         />
-        <KpiCard
-          icon={Siren}
-          label="Threat alert status"
-          value={kpis.threatLevel}
-          hint={`${kpis.challengedCount24h.toLocaleString()} challenged`}
+        <MetricCard
+          label="Active threat severity"
+          value={SEVERITY_LABEL[kpis.threatLevel]}
+          subtitle={`${kpis.challengedCount24h.toLocaleString()} challenged`}
           tone={
             kpis.threatLevel === "High"
               ? "hot"
@@ -96,27 +102,25 @@ export function KpiHeader({
   );
 }
 
-function ConnectionChip({ state }: { state: LiveConnectionState }) {
+function IngestChip({ state }: { state: LiveConnectionState }) {
   const label =
     state === "live"
-      ? "Live feed"
+      ? "CDC live"
       : state === "demo"
-        ? "Demo feed"
+        ? "Local ingest"
         : state === "connecting"
           ? "Linking"
           : "Offline";
 
   return (
-    <span className="inline-flex items-center gap-2 rounded-sm border border-[var(--dash-line)] bg-[var(--dash-ink)] px-2.5 py-1 font-mono text-[10px] tracking-[0.16em] text-slate-300 uppercase">
+    <span className="inline-flex items-center gap-2 rounded border border-slate-800/80 bg-[#0B0F19]/80 px-2.5 py-1 font-mono text-[10px] tracking-[0.12em] text-slate-300 uppercase">
       <span
         className={`h-1.5 w-1.5 rounded-full ${
-          state === "live"
-            ? "bg-[var(--dash-signal)] shadow-[0_0_10px_var(--dash-signal)]"
-            : state === "demo"
-              ? "bg-amber-300"
-              : state === "connecting"
-                ? "animate-pulse bg-amber-300"
-                : "bg-rose-400"
+          state === "live" || state === "demo"
+            ? "animate-pulse bg-emerald-400"
+            : state === "connecting"
+              ? "animate-pulse bg-amber-400"
+              : "bg-rose-400"
         }`}
       />
       {label}
@@ -124,41 +128,38 @@ function ConnectionChip({ state }: { state: LiveConnectionState }) {
   );
 }
 
-function KpiCard({
-  icon: Icon,
+function MetricCard({
   label,
   value,
   suffix,
-  hint,
+  subtitle,
   tone = "neutral",
 }: {
-  icon: typeof Activity;
   label: string;
   value: string;
   suffix?: string;
-  hint: string;
+  subtitle: string;
   tone?: "neutral" | "ok" | "warn" | "hot";
 }) {
   const valueClass =
     tone === "hot"
-      ? "text-rose-300"
+      ? "text-rose-400"
       : tone === "warn"
-        ? "text-amber-200"
+        ? "text-amber-400"
         : tone === "ok"
-          ? "text-emerald-300"
-          : "text-[var(--dash-paper)]";
+          ? "text-emerald-400"
+          : "text-slate-100";
 
   return (
-    <article className="dashboard-panel px-4 py-4 sm:px-5">
-      <div className="flex items-center gap-2 text-slate-500">
-        <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-        <p className="dashboard-kicker">{label}</p>
-      </div>
-      <p className={`mt-3 font-mono text-3xl leading-none tracking-tight ${valueClass}`}>
+    <article className="rounded-md border border-slate-800/80 bg-slate-900/60 px-4 py-3 backdrop-blur-sm">
+      <p className="font-mono text-[10px] tracking-[0.12em] text-slate-500 uppercase">
+        {label}
+      </p>
+      <p className={`mt-2 font-mono text-2xl leading-none tracking-tight ${valueClass}`}>
         {value}
         {suffix ? <span className="ml-1 text-sm text-slate-500">{suffix}</span> : null}
       </p>
-      <p className="mt-2 text-xs text-slate-500">{hint}</p>
+      <p className="mt-2 font-mono text-[11px] text-slate-500">{subtitle}</p>
     </article>
   );
 }

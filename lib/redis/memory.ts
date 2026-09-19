@@ -36,6 +36,20 @@ export class MemoryRedis {
     return next;
   }
 
+  async incrbyfloat(key: string, increment: number): Promise<number> {
+    const current = await this.get<number | string>(key);
+    const base =
+      typeof current === "number"
+        ? current
+        : typeof current === "string"
+          ? Number.parseFloat(current)
+          : 0;
+    const next = (Number.isFinite(base) ? base : 0) + increment;
+    const entry = this.strings.get(key);
+    this.strings.set(key, { value: next, expiresAt: entry?.expiresAt });
+    return next;
+  }
+
   async expire(key: string, seconds: number): Promise<number> {
     const expiresAt = Date.now() + seconds * 1000;
     if (this.strings.has(key)) {
@@ -69,6 +83,7 @@ export class MemoryRedis {
   }
 
   async zremrangebyscore(key: string, min: number, max: number): Promise<number> {
+    this.pruneExpiredSortedSet(key);
     const zset = this.sortedSets.get(key);
     if (!zset) return 0;
     let removed = 0;
@@ -82,6 +97,7 @@ export class MemoryRedis {
   }
 
   async zadd(key: string, entry: ZMember): Promise<number> {
+    this.pruneExpiredSortedSet(key);
     const zset = this.sortedSets.get(key) ?? new Map<string, number>();
     const isNew = !zset.has(entry.member);
     zset.set(entry.member, entry.score);
@@ -169,6 +185,11 @@ class MemoryPipeline {
 
   hincrby(key: string, field: string, increment: number): this {
     this.ops.push(() => this.redis.hincrby(key, field, increment));
+    return this;
+  }
+
+  incrbyfloat(key: string, increment: number): this {
+    this.ops.push(() => this.redis.incrbyfloat(key, increment));
     return this;
   }
 

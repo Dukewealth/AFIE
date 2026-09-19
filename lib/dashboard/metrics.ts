@@ -15,8 +15,16 @@ export function computeThreatLevel(
   return "Low";
 }
 
+export function computeFraudVolumePrevented(
+  rows: Pick<DashboardTransaction, "status" | "amount">[],
+): number {
+  return rows
+    .filter((row) => row.status === "BLOCKED")
+    .reduce((sum, row) => sum + (Number.isFinite(row.amount) ? Number(row.amount) : 0), 0);
+}
+
 export function computeKpisFromRows(
-  rows: Pick<DashboardTransaction, "status" | "latency_ms">[],
+  rows: Pick<DashboardTransaction, "status" | "latency_ms" | "amount">[],
   totalOverride?: number,
 ): DashboardKpis {
   const totalEvaluated24h = totalOverride ?? rows.length;
@@ -46,6 +54,7 @@ export function computeKpisFromRows(
     blockRate,
     averageLatencyMs,
     threatLevel: computeThreatLevel(blockRate, challengeRate),
+    fraudVolumePrevented: Number(computeFraudVolumePrevented(rows).toFixed(2)),
   };
 }
 
@@ -74,6 +83,10 @@ export function applyLiveTransactionToKpis(
 
   const blockRate = Number(((blockedCount24h / totalEvaluated24h) * 100).toFixed(1));
   const challengeRate = (challengedCount24h / totalEvaluated24h) * 100;
+  const fraudVolumePrevented =
+    transaction.status === "BLOCKED"
+      ? Number((kpis.fraudVolumePrevented + Number(transaction.amount)).toFixed(2))
+      : kpis.fraudVolumePrevented;
 
   return {
     totalEvaluated24h,
@@ -82,6 +95,7 @@ export function applyLiveTransactionToKpis(
     blockRate,
     averageLatencyMs,
     threatLevel: computeThreatLevel(blockRate, challengeRate),
+    fraudVolumePrevented,
   };
 }
 
@@ -93,5 +107,6 @@ export function emptyKpis(): DashboardKpis {
     blockRate: 0,
     averageLatencyMs: 0,
     threatLevel: "Low",
+    fraudVolumePrevented: 0,
   };
 }

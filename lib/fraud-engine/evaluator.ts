@@ -25,7 +25,9 @@ export async function evaluateTransaction(
   options: EvaluateOptions,
 ): Promise<EvaluationResult> {
   const start = performance.now();
-  const heuristicResult = await evaluateHeuristics(payload);
+  const heuristicResult = await evaluateHeuristics(payload, {
+    merchantId: options.merchantId,
+  });
 
   let agentOutcome: AgentEvaluationOutcome | null = null;
   let action = heuristicResult.action;
@@ -39,6 +41,16 @@ export async function evaluateTransaction(
       riskScore = agentOutcome.risk_score;
       reasons = [agentOutcome.reason, ...heuristicResult.reasons];
     }
+  }
+
+  // Hard product rule: never BLOCK transactions under $1,000
+  if (payload.amount < 1_000 && action === "BLOCK") {
+    action = "CHALLENGE";
+    riskScore = Math.min(riskScore, 69);
+    reasons = [
+      "Under $1,000 protection — payment cannot be halted; step-up challenge required",
+      ...reasons,
+    ];
   }
 
   const latencyMs = Math.round(performance.now() - start);

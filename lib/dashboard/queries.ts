@@ -2,7 +2,7 @@ import { createServerSupabaseClient } from "@/lib/db/supabase";
 import { isSupabaseConfigured, withTimeout } from "@/lib/dashboard/config";
 import { getDemoSnapshot } from "@/lib/dashboard/demo-data";
 import { assembleForensics } from "@/lib/dashboard/forensics";
-import { computeThreatLevel, emptyKpis } from "@/lib/dashboard/metrics";
+import { computeFraudVolumePrevented, computeThreatLevel, emptyKpis } from "@/lib/dashboard/metrics";
 import { normalizeTransaction } from "@/lib/dashboard/normalize";
 import { getLocalForensics, getLocalSnapshot, hasLocalEvaluations } from "@/lib/store/local";
 import type {
@@ -22,7 +22,8 @@ export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
     return getDemoSnapshot();
   }
 
-  return withTimeout(loadLiveSnapshot(), QUERY_TIMEOUT_MS, getLocalSnapshot());
+  const fallback = hasLocalEvaluations() ? getLocalSnapshot() : getDemoSnapshot();
+  return withTimeout(loadLiveSnapshot(), QUERY_TIMEOUT_MS, fallback);
 }
 
 async function loadLiveSnapshot(): Promise<DashboardSnapshot> {
@@ -53,9 +54,8 @@ async function loadLiveSnapshot(): Promise<DashboardSnapshot> {
           .gte("created_at", since),
         supabase
           .from("transactions")
-          .select("status, latency_ms")
+          .select("status, latency_ms, amount")
           .gte("created_at", since)
-          .not("latency_ms", "is", null)
           .limit(LATENCY_SAMPLE_LIMIT),
       ]);
 
@@ -67,7 +67,8 @@ async function loadLiveSnapshot(): Promise<DashboardSnapshot> {
     const totalEvaluated24h = countResult.count ?? transactions.length;
     const blockedCount24h = blockedResult.count ?? 0;
     const challengedCount24h = challengedResult.count ?? 0;
-    const latencies = (latencyResult.data ?? [])
+    const sampleRows = latencyResult.data ?? [];
+    const latencies = sampleRows
       .map((row) => row.latency_ms)
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
     const averageLatencyMs =
@@ -81,6 +82,18 @@ async function loadLiveSnapshot(): Promise<DashboardSnapshot> {
     const challengeRate =
       totalEvaluated24h > 0 ? (challengedCount24h / totalEvaluated24h) * 100 : 0;
 
+    const blockedVolumeRows = transactions.filter((row) => row.status === "BLOCKED");
+    const fraudVolumePrevented = Number(
+      computeFraudVolumePrevented(
+        blockedVolumeRows.length > 0
+          ? blockedVolumeRows
+          : sampleRows.map((row) => ({
+              status: row.status,
+              amount: typeof row.amount === "number" ? row.amount : 0,
+            })),
+      ).toFixed(2),
+    );
+
     return {
       transactions,
       kpis: {
@@ -90,6 +103,7 @@ async function loadLiveSnapshot(): Promise<DashboardSnapshot> {
         blockRate,
         averageLatencyMs,
         threatLevel: computeThreatLevel(blockRate, challengeRate),
+        fraudVolumePrevented,
       },
       mode: "live",
     };

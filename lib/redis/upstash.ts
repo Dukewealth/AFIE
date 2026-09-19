@@ -59,6 +59,8 @@ export const RedisKeys = {
     `velocity:device:${fingerprint}:${window}`,
   blacklistIdentifiers: "blacklist:identifiers",
   userStats: (userId: string) => `user:stats:${userId}`,
+  dailySpend: (merchantId: string, userId: string) =>
+    `daily_spend:${merchantId}:${userId}`,
   whitelistIp: (ip: string) => `whitelist:ip:${ip}`,
   whitelistDevice: (fingerprint: string) => `whitelist:device:${fingerprint}`,
 } as const;

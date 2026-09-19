@@ -17,6 +17,12 @@ export interface HeuristicEvaluationResult {
   action: FraudAction;
   reasons: string[];
   velocityStats: VelocityStats;
+  dailySpend?: number;
+}
+
+export interface HeuristicOptions {
+  merchantId: string;
+  redis?: TypedRedisClient;
 }
 
 interface RuleSignal {
@@ -29,7 +35,11 @@ const WINDOW_3M_MS = 3 * 60 * 1000;
 const WINDOW_1H_MS = 60 * 60 * 1000;
 const TTL_3M_SEC = 4 * 60;
 const TTL_1H_SEC = 65 * 60;
+const DAILY_SPEND_TTL_SEC = 24 * 60 * 60;
+
 const VELOCITY_3M_THRESHOLD = 3;
+const UNDER_THRESHOLD_AMOUNT = 1_000;
+const DAILY_MERCHANT_CAP = 5_000;
 const NEW_ACCOUNT_MAX_DAYS = 7;
 const NEW_ACCOUNT_AMOUNT_THRESHOLD = 1_000;
 const AVERAGE_MULTIPLIER = 5;
@@ -41,28 +51,54 @@ const RULE = {
   VELOCITY_DEVICE_3M: "VELOCITY_DEVICE_3M",
   NEW_ACCOUNT_HIGH_AMOUNT: "NEW_ACCOUNT_HIGH_AMOUNT",
   AMOUNT_EXCEEDS_AVERAGE: "AMOUNT_EXCEEDS_AVERAGE",
+  DAILY_SPEND_CAP: "DAILY_SPEND_CAP",
 } as const;
 
+const VELOCITY_RULES = new Set<string>([
+  RULE.VELOCITY_USER_3M,
+  RULE.VELOCITY_DEVICE_3M,
+]);
+
+const DEVICE_RISK_RULES = new Set<string>([
+  RULE.BLACKLIST_IP,
+  RULE.BLACKLIST_DEVICE,
+]);
+
+/**
+ * Low-latency deterministic rule engine with financial guardrails:
+ * A) Under $1,000: never BLOCK solely from velocity; device risk → CHALLENGE max
+ * B) Cumulative $5,000 daily merchant/user spend → immediate BLOCK
+ * C) Over $1,000: full velocity + anomaly scoring
+ */
 export async function evaluateHeuristics(
   payload: TransactionPayload,
-  redis: TypedRedisClient = createRedisClient(),
+  options: HeuristicOptions,
 ): Promise<HeuristicEvaluationResult> {
+  const redis = options.redis ?? createRedisClient();
+
   try {
-    return await evaluateWithRedis(payload, redis);
+    return await evaluateWithRedis(payload, options.merchantId, redis);
   } catch (error) {
     console.error("[AFIE] Heuristic Redis failure, degrading to local rules:", error);
-    return buildResult(runLocalAnomalyHeuristics(payload), emptyVelocityStats());
+    return finalizeResult(
+      payload,
+      runLocalAnomalyHeuristics(payload),
+      emptyVelocityStats(),
+      0,
+    );
   }
 }
 
 async function evaluateWithRedis(
   payload: TransactionPayload,
+  merchantId: string,
   redis: TypedRedisClient,
 ): Promise<HeuristicEvaluationResult> {
   const now = Date.now();
   const cutoff3m = now - WINDOW_3M_MS;
   const cutoff1h = now - WINDOW_1H_MS;
   const member = `${now}:${payload.transaction_id}`;
+  const spendKey = RedisKeys.dailySpend(merchantId, payload.user_id);
 
   const pipeline = redis.pipeline();
 
@@ -104,6 +140,8 @@ async function evaluateWithRedis(
   pipeline.hmget(RedisKeys.userStats(payload.user_id), "sum", "count");
   pipeline.hincrbyfloat(RedisKeys.userStats(payload.user_id), "sum", payload.amount);
   pipeline.hincrby(RedisKeys.userStats(payload.user_id), "count", 1);
+  pipeline.incrbyfloat(spendKey, payload.amount);
+  pipeline.expire(spendKey, DAILY_SPEND_TTL_SEC);
 
   const results = await pipeline.exec();
   if (!results) {
@@ -114,18 +152,22 @@ async function evaluateWithRedis(
   const userCount1h = readVelocityCount(results, 1);
   const deviceCount3m = readVelocityCount(results, 2);
   const deviceCount1h = readVelocityCount(results, 3);
+  const dailySpend = parseStatNumber(results[21]);
 
   const signals: RuleSignal[] = [];
   signals.push(...checkBlacklistResults(results[16], results[17], payload));
-  signals.push(...checkVelocity3m(userCount3m, deviceCount3m));
-  signals.push(...checkAnomalyHeuristics(payload, readUserStats(results[18])));
 
-  return buildResult(signals, {
-    userCount3m,
-    userCount1h,
-    deviceCount3m,
-    deviceCount1h,
-  });
+  // Rule C: full velocity for >= $1,000; Rule A softens under $1,000 later
+  signals.push(...checkVelocity3m(userCount3m, deviceCount3m, payload.amount));
+  signals.push(...checkAnomalyHeuristics(payload, readUserStats(results[18])));
+  signals.push(...checkDailySpendCap(dailySpend));
+
+  return finalizeResult(
+    payload,
+    signals,
+    { userCount3m, userCount1h, deviceCount3m, deviceCount1h },
+    dailySpend,
+  );
 }
 
 function appendVelocityWindow(
@@ -189,19 +231,25 @@ function checkBlacklistResults(
   return signals;
 }
 
-function checkVelocity3m(userCount: number, deviceCount: number): RuleSignal[] {
+function checkVelocity3m(
+  userCount: number,
+  deviceCount: number,
+  amount: number,
+): RuleSignal[] {
   const signals: RuleSignal[] = [];
+  const underThreshold = amount < UNDER_THRESHOLD_AMOUNT;
+
   if (userCount > VELOCITY_3M_THRESHOLD) {
     signals.push({
       rule: RULE.VELOCITY_USER_3M,
-      score: 50,
+      score: underThreshold ? 35 : 50,
       reason: `High velocity: ${userCount} user attempts in past 3 minutes`,
     });
   }
   if (deviceCount > VELOCITY_3M_THRESHOLD) {
     signals.push({
       rule: RULE.VELOCITY_DEVICE_3M,
-      score: 45,
+      score: underThreshold ? 30 : 45,
       reason: `High velocity: ${deviceCount} device attempts in past 3 minutes`,
     });
   }
@@ -239,6 +287,19 @@ function checkAnomalyHeuristics(
   return signals;
 }
 
+function checkDailySpendCap(dailySpend: number): RuleSignal[] {
+  if (dailySpend <= DAILY_MERCHANT_CAP) return [];
+
+  return [
+    {
+      rule: RULE.DAILY_SPEND_CAP,
+      score: 95,
+      reason:
+        "Exceeded cumulative daily merchant limit ($5,000 threshold breached via repetitive transactions)",
+    },
+  ];
+}
+
 function resolveHistoricalAverage(
   payload: TransactionPayload,
   stats: { sum: number; count: number },
@@ -262,12 +323,54 @@ function emptyVelocityStats(): VelocityStats {
   return { userCount3m: 0, userCount1h: 0, deviceCount3m: 0, deviceCount1h: 0 };
 }
 
-function buildResult(
+/**
+ * Hard rule: amounts under $1,000 are never BLOCKED — any fault maxes at CHALLENGE (OTP).
+ * Daily spend cap still flags the case but cannot halt sub-$1k payments.
+ */
+function applyUnderThresholdGuardrails(
+  amount: number,
   signals: RuleSignal[],
-  velocityStats: VelocityStats = emptyVelocityStats(),
+): RuleSignal[] {
+  if (amount >= UNDER_THRESHOLD_AMOUNT) return signals;
+
+  return signals.map((signal) => {
+    if (signal.rule === RULE.DAILY_SPEND_CAP) {
+      return {
+        ...signal,
+        score: 65,
+        reason: `${signal.reason} (under $1,000 — challenge only, funds not halted)`,
+      };
+    }
+    if (VELOCITY_RULES.has(signal.rule)) {
+      return { ...signal, score: Math.min(signal.score, 40) };
+    }
+    if (DEVICE_RISK_RULES.has(signal.rule)) {
+      return {
+        ...signal,
+        score: 55,
+        reason: `${signal.reason} (under $1,000 — OTP challenge only)`,
+      };
+    }
+    return { ...signal, score: Math.min(signal.score, 65) };
+  });
+}
+
+function finalizeResult(
+  payload: TransactionPayload,
+  rawSignals: RuleSignal[],
+  velocityStats: VelocityStats,
+  dailySpend: number,
 ): HeuristicEvaluationResult {
-  const score = Math.min(100, signals.reduce((total, s) => total + s.score, 0));
-  const status = scoreToStatus(score);
+  const signals = applyUnderThresholdGuardrails(payload.amount, rawSignals);
+  let score = Math.min(100, signals.reduce((total, s) => total + s.score, 0));
+  let status = scoreToStatus(score);
+
+  // Absolute hard stop: never CRITICAL / BLOCK below $1,000 regardless of fault
+  if (payload.amount < UNDER_THRESHOLD_AMOUNT && status === "CRITICAL") {
+    status = "FLAGGED";
+    score = Math.min(score, 69);
+  }
+
   return {
     score,
     triggeredRules: signals.map((s) => s.rule),
@@ -275,6 +378,7 @@ function buildResult(
     action: statusToAction(status),
     reasons: signals.map((s) => s.reason),
     velocityStats,
+    dailySpend,
   };
 }
 

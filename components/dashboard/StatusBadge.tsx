@@ -2,9 +2,12 @@ import { isTransactionStatus } from "@/lib/dashboard/format";
 import type { TransactionStatus } from "@/lib/dashboard/types";
 
 const STATUS_STYLES: Record<TransactionStatus, string> = {
-  ALLOWED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  CHALLENGED: "border-amber-400/35 bg-amber-400/10 text-amber-200",
-  BLOCKED: "border-rose-500/35 bg-rose-500/10 text-rose-300",
+  ALLOWED:
+    "bg-emerald-950/60 text-emerald-400 border border-emerald-800/50",
+  CHALLENGED:
+    "bg-amber-950/60 text-amber-400 border border-amber-800/50",
+  BLOCKED:
+    "bg-rose-950/60 text-rose-400 border border-rose-800/50",
 };
 
 export function StatusBadge({ status }: { status: string }) {
@@ -12,8 +15,10 @@ export function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[10px] font-medium tracking-[0.14em] uppercase ${
-        resolved ? STATUS_STYLES[resolved] : "border-white/10 bg-white/5 text-slate-400"
+      className={`inline-flex items-center rounded px-2 py-0.5 font-mono text-[10px] font-semibold tracking-[0.12em] uppercase ${
+        resolved
+          ? STATUS_STYLES[resolved]
+          : "border border-slate-700 bg-slate-900/60 text-slate-400"
       }`}
     >
       {resolved ?? status}
