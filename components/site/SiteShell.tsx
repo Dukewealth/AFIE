@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { SiteNav } from "@/components/site/SiteNav";
+import { Navbar } from "@/components/Navbar";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="afie-grid min-h-screen text-[#E8EDF5]">
-      <SiteNav />
-      <main>{children}</main>
+      <Navbar />
+      <main className="pt-24">{children}</main>
       <footer className="border-t border-white/[0.06] bg-[#06080D]/80">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
@@ -26,8 +26,14 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
             <Link href="/integrations" className="hover:text-white">
               Integrations
             </Link>
+            <Link href="/docs" className="hover:text-white">
+              Docs
+            </Link>
             <Link href="/compliance" className="hover:text-white">
               Compliance
+            </Link>
+            <Link href="/pricing" className="hover:text-white">
+              Pricing
             </Link>
             <Link href="/dashboard" className="hover:text-white">
               Console

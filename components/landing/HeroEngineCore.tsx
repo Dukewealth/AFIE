@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Copy, Check } from "lucide-react";
 import Link from "next/link";
+import { BinaryCodeStream } from "@/components/BinaryCodeStream";
 
 type Stage = {
   id: string;
@@ -85,8 +86,12 @@ export function HeroEngineCore() {
   };
 
   return (
-    <section className="relative overflow-hidden border-b border-white/[0.06]">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
+    <section
+      id="hero"
+      className="relative overflow-hidden border-b border-white/[0.06]"
+    >
+      <BinaryCodeStream />
+      <div className="relative z-10 mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
         <p className="font-mono text-[11px] tracking-wide text-[#8B95A8]">
           <span className="text-emerald-400">INLINE PRE-AUTHORIZATION RISK INFERENCE</span>
           <span className="mx-2 text-[#3A4254]">·</span>
