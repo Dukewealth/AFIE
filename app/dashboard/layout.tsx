@@ -14,9 +14,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Incident Command · AFIE Fraud Operations",
+  title: "Mission Control · AFIE",
   description:
-    "Mission-critical fraud operations console — live stream, incident deep-dive, and rule tuning.",
+    "AFIE mission control — telemetric HUD, ingress matrix, and incident inspector for pre-settlement fraud ops.",
 };
 
 export default function DashboardLayout({

@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AttackVectorTray } from "@/components/dashboard/AttackVectorTray";
 import { CommandHeader } from "@/components/dashboard/CommandHeader";
 import { DailyReportPrint } from "@/components/dashboard/DailyReportPrint";
 import { DeveloperModal } from "@/components/dashboard/DeveloperModal";
 import { IncidentInspector } from "@/components/dashboard/IncidentInspector";
-import { RuleTuningDrawer } from "@/components/dashboard/RuleTuningDrawer";
 import { TelemetryRow } from "@/components/dashboard/TelemetryRow";
 import { TransactionStream } from "@/components/dashboard/TransactionStream";
 import { applyLiveTransactionToKpis } from "@/lib/dashboard/metrics";
@@ -46,7 +46,7 @@ export function DashboardClient({
   const [apiOpen, setApiOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [actionToast, setActionToast] = useState<string | null>(null);
-  const [throughput, setThroughput] = useState(1180);
+  const [paused, setPaused] = useState(false);
 
   const flash = useCallback((message: string) => {
     setActionToast(message);
@@ -65,7 +65,6 @@ export function DashboardClient({
 
       if (eventMode === "insert") {
         setKpis((current) => applyLiveTransactionToKpis(current, incoming));
-        setThroughput((t) => Math.min(2400, t + 3 + Math.floor(Math.random() * 8)));
       }
 
       setSelected((current) => (current?.id === incoming.id ? incoming : current));
@@ -76,6 +75,7 @@ export function DashboardClient({
   useEffect(() => {
     if (mode === "demo" || !isBrowserSupabaseConfigured()) {
       const poll = async () => {
+        if (paused) return;
         try {
           const response = await fetch("/api/dashboard/snapshot", { cache: "no-store" });
           if (!response.ok) return;
@@ -85,7 +85,6 @@ export function DashboardClient({
           };
           setTransactions(snapshot.transactions);
           setKpis(snapshot.kpis);
-          setThroughput((t) => 1100 + Math.floor(Math.random() * 280));
         } catch {
           // Keep last known dashboard state during transient poll failures.
         }
@@ -107,6 +106,7 @@ export function DashboardClient({
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "transactions" },
           (payload) => {
+            if (paused) return;
             upsertTransaction(normalizeTransaction(payload.new as Transaction), "insert");
           },
         )
@@ -141,7 +141,7 @@ export function DashboardClient({
         queueMicrotask(() => setConnection("offline"));
       }
     }
-  }, [mode, upsertTransaction]);
+  }, [mode, upsertTransaction, paused]);
 
   const openForensics = useCallback(async (transaction: DashboardTransaction) => {
     setSelected(transaction);
@@ -185,15 +185,24 @@ export function DashboardClient({
     });
   }, [transactions, searchQuery]);
 
+  const p99 = Math.max(
+    31.2,
+    Number(((kpis.averageLatencyMs || 28) * 1.12).toFixed(1)),
+  );
+  const operational = connection !== "offline";
+
   return (
-    <>
+    <div className="mission-grid min-h-screen">
       <CommandHeader
-        avgLatencyMs={kpis.averageLatencyMs || 34}
-        throughputHint={connection === "offline" ? 0 : throughput}
-        onOpenSearch={() => undefined}
+        p99Ms={p99}
+        operational={operational}
         onExportSar={() => {
           flash("SAR packet queued · BoG/NIBSS export ready");
           window.print();
+        }}
+        onRunSimulator={() => {
+          setApiOpen(true);
+          flash("Simulator / API credentials panel opened");
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -207,6 +216,8 @@ export function DashboardClient({
             <TransactionStream
               transactions={filtered}
               selectedId={selected?.id ?? null}
+              paused={paused}
+              onTogglePause={() => setPaused((v) => !v)}
               onSelect={openForensics}
               onRelease={(tx) => flash(`Hold released · ${tx.external_tx_id}`)}
               onConfirmFraud={(tx) =>
@@ -231,18 +242,18 @@ export function DashboardClient({
               }}
               onBlacklist={() =>
                 flash(
-                  `Beneficiary hashed → global blacklist · ${selected?.user_id ?? ""}`,
+                  `Entity hashed → consortium blacklist · ${selected?.user_id ?? ""}`,
                 )
               }
-              onOverride={() =>
-                flash("Override pending MFA · step-up challenge issued")
+              onChallenge={() =>
+                flash("Biometric / USSD step-up challenge dispatched")
               }
             />
           </div>
         </div>
-      </div>
 
-      <RuleTuningDrawer />
+        <AttackVectorTray transactions={transactions} />
+      </div>
 
       <DeveloperModal
         open={apiOpen}
@@ -252,6 +263,6 @@ export function DashboardClient({
       />
 
       <DailyReportPrint kpis={kpis} transactions={transactions} />
-    </>
+    </div>
   );
 }

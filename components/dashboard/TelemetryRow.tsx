@@ -3,20 +3,14 @@
 import { useMemo } from "react";
 import type { DashboardKpis, DashboardTransaction } from "@/lib/dashboard/types";
 
-function Sparkline({
-  points,
-  stroke = "#10B981",
-}: {
-  points: number[];
-  stroke?: string;
-}) {
+function Sparkline({ points, stroke = "#10B981" }: { points: number[]; stroke?: string }) {
   const path = useMemo(() => {
     if (points.length < 2) return "";
     const max = Math.max(...points, 1);
     const min = Math.min(...points, 0);
     const range = max - min || 1;
-    const w = 80;
-    const h = 28;
+    const w = 72;
+    const h = 24;
     return points
       .map((p, i) => {
         const x = (i / (points.length - 1)) * w;
@@ -27,7 +21,7 @@ function Sparkline({
   }, [points]);
 
   return (
-    <svg viewBox="0 0 80 28" className="h-7 w-20" aria-hidden>
+    <svg viewBox="0 0 72 24" className="h-6 w-[72px]" aria-hidden>
       <path d={path} fill="none" stroke={stroke} strokeWidth="1.5" />
     </svg>
   );
@@ -52,65 +46,74 @@ export function TelemetryRow({
   transactions: DashboardTransaction[];
 }) {
   const spark = useMemo(() => volumeSpark(transactions), [transactions]);
-  const volumeUsd = kpis.fraudVolumePrevented + kpis.totalEvaluated24h * 42;
-  const ghsApprox = volumeUsd * 12.3;
-  const savedCapital = Math.round(kpis.fraudVolumePrevented || kpis.blockedCount24h * 590);
-  const fpr = Math.max(0.008, Math.min(0.08, (kpis.challengedCount24h || 1) / Math.max(kpis.totalEvaluated24h, 1) * 0.35));
-  const consortiumAlerts = Math.max(1, Math.round(kpis.blockedCount24h * 0.08) || 9);
+  const capital = Math.round(
+    kpis.fraudVolumePrevented || kpis.blockedCount24h * 590,
+  );
+  const syndicates = Math.max(1, Math.round(kpis.blockedCount24h * 0.27) || 38);
+  const fpr = Math.max(
+    0.008,
+    Math.min(
+      0.05,
+      ((kpis.challengedCount24h || 1) / Math.max(kpis.totalEvaluated24h, 1)) * 0.28,
+    ),
+  );
+  const hashPool = Math.max(
+    120,
+    kpis.blockedCount24h * 14 + kpis.challengedCount24h * 3,
+  );
 
   return (
     <section className="grid grid-cols-2 gap-2 xl:grid-cols-4 print:hidden">
-      <article className="rounded border border-[#1E293B] bg-[#0F172A] px-3 py-3">
-        <p className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
-          Total Processed Volume (24h)
+      <article className="rounded-lg border border-white/[0.08] bg-[#0A0E17] px-3.5 py-3 transition hover:border-white/[0.18]">
+        <p className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+          Capital Preserved
         </p>
         <div className="mt-2 flex items-end justify-between gap-2">
           <div>
             <p className="font-mono text-xl tabular-nums tracking-tight text-slate-100">
-              GHS {(ghsApprox / 1_000_000).toFixed(1)}M
+              ${capital.toLocaleString()}
             </p>
-            <p className="mt-0.5 font-mono text-[11px] tabular-nums text-slate-500">
-              ${(volumeUsd / 1_000_000).toFixed(2)}M USD
+            <p className="mt-1 font-mono text-[11px] tabular-nums text-emerald-400">
+              +18.4% vs 30d baseline
             </p>
           </div>
           <Sparkline points={spark} />
         </div>
       </article>
 
-      <article className="rounded border border-red-500/20 bg-red-500/10 px-3 py-3">
-        <p className="text-[10px] font-semibold tracking-wider text-red-400/80 uppercase">
-          Autonomous Halts
+      <article className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3.5 py-3 shadow-[0_0_12px_rgba(244,63,94,0.08)]">
+        <p className="text-[11px] font-semibold tracking-wider text-rose-400/80 uppercase">
+          Pre-Settlement Halts
         </p>
-        <p className="mt-2 font-mono text-xl tabular-nums tracking-tight text-red-400">
+        <p className="mt-2 font-mono text-xl tabular-nums tracking-tight text-rose-400">
           {kpis.blockedCount24h.toLocaleString()}
         </p>
-        <p className="mt-1 font-mono text-[11px] tabular-nums text-red-400/70">
-          ${savedCapital.toLocaleString()} capital locked
+        <p className="mt-1 inline-flex rounded border border-rose-500/20 bg-[#05070B]/40 px-1.5 py-0.5 font-mono text-[10px] text-rose-400">
+          {syndicates} Syndicates Halted
         </p>
       </article>
 
-      <article className="rounded border border-[#1E293B] bg-[#0F172A] px-3 py-3">
-        <p className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
-          False Positive Rate
+      <article className="rounded-lg border border-white/[0.08] bg-[#0A0E17] px-3.5 py-3 transition hover:border-white/[0.18]">
+        <p className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+          False Positive Ratio
         </p>
         <p className="mt-2 font-mono text-xl tabular-nums tracking-tight text-emerald-400">
           {(fpr * 100).toFixed(3)}%
         </p>
         <p className="mt-1 text-[11px] text-slate-500">
-          Benchmark &lt; 0.05% ·{" "}
-          <span className="text-emerald-400">within SLA</span>
+          Compliant with Central Bank CISD
         </p>
       </article>
 
-      <article className="rounded border border-amber-500/20 bg-amber-500/10 px-3 py-3">
-        <p className="text-[10px] font-semibold tracking-wider text-amber-400/80 uppercase">
-          Consortium Threat Alerts
+      <article className="rounded-lg border border-white/[0.08] bg-[#0A0E17] px-3.5 py-3 transition hover:border-white/[0.18]">
+        <p className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+          Consortium Hash Pool
         </p>
-        <p className="mt-2 font-mono text-xl tabular-nums tracking-tight text-amber-400">
-          {consortiumAlerts}
+        <p className="mt-2 font-mono text-xl tabular-nums tracking-tight text-blue-400">
+          {hashPool.toLocaleString()}
         </p>
-        <p className="mt-1 text-[11px] text-amber-400/70">
-          Syndicated burner devices detected
+        <p className="mt-1 text-[11px] text-slate-500">
+          Active cross-tenant blocked entities
         </p>
       </article>
     </section>

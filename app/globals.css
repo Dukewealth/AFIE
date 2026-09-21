@@ -54,15 +54,25 @@ body {
 }
 
 .dashboard-root {
-  --dash-ink: #090d16;
-  --dash-panel: #0f172a;
-  --dash-line: #1e293b;
-  --dash-signal: #34d399;
-  --dash-paper: #f1f5f9;
-  --dash-mist: #64748b;
-  background: #090d16;
+  --dash-ink: #05070b;
+  --dash-panel: #0a0e17;
+  --dash-elevated: #0f1626;
+  --dash-focus: #151e32;
+  --dash-line: rgba(255, 255, 255, 0.08);
+  --dash-signal: #10b981;
+  --dash-paper: #e8edf5;
+  --dash-mist: #94a3b8;
+  background: #05070b;
   color: var(--dash-paper);
   font-family: var(--font-dashboard-sans), var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.mission-grid {
+  background-color: #05070b;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
 .dashboard-kicker {
