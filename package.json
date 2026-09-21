@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "simulate": "tsx scripts/simulate-traffic.ts",
+    "test:pipeline": "tsx scripts/test-pipeline.ts",
     "dev:demo": "concurrently -k -n server,sim -c cyan,magenta \"npm run dev\" \"npm run simulate\""
   },
   "dependencies": {
